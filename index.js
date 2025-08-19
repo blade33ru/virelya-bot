@@ -1,79 +1,69 @@
-﻿const express = require('express');
-const bodyParser = require('body-parser');
-const OpenAI = require('openai');
+﻿const express = require("express");
+const bodyParser = require("body-parser");
+const axios = require("axios");
+require("dotenv").config();
 
 const app = express();
-const VERIFY_TOKEN = 'virelya_secret_token';
-const PAGE_ACCESS_TOKEN = 'EAAYRbPToAoUBPC2em8ZBv4bsr6IyF0v442ZCYQATZCdmLLHqNDXxCCQgL5Y4HNpT1m7stfr5QlJAYopICZC8LONbC1Lb0J9ObNO0r1KlzyWNzFODX2OMRaOHF0DitZB4PqMRUA3qiZA1c12uCHMDqy864oJVS1kfveV7OGt5ysAD7tfeTBwrJ5NquHXaDmuFw8G3wZD'; // Replace with your Page token
-const OPENAI_API_KEY = 'sk-...'; // 🔐 Paste your OpenAI key here
+const PORT = process.env.PORT || 3000;
 
-const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 
 app.use(bodyParser.json());
 
-// Messenger webhook verification
-app.get('/webhook', (req, res) => {
-  const mode = req.query['hub.mode'];
-  const token = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
+// 🧪 Webhook verification endpoint
+app.get("/webhook", (req, res) => {
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
 
-  if (mode && token === VERIFY_TOKEN) {
-    console.log('🌼 WEBHOOK_VERIFIED');
+  if (mode && token && mode === "subscribe" && token === VERIFY_TOKEN) {
+    console.log("✅ Webhook verified");
     res.status(200).send(challenge);
   } else {
+    console.log("❌ Webhook verification failed");
     res.sendStatus(403);
   }
 });
 
-// Messenger message handler
-app.post('/webhook', async (req, res) => {
-  console.log('📨 Incoming webhook payload:');
-  console.dir(req.body, { depth: null });
+// 💌 Message handler
+app.post("/webhook", async (req, res) => {
+  const body = req.body;
 
-  if (req.body.object === 'page') {
-    for (const entry of req.body.entry) {
+  if (body.object === "page") {
+    for (const entry of body.entry) {
       for (const event of entry.messaging) {
         const senderId = event.sender.id;
-        const messageText = event.message?.text;
+        const message = event.message?.text;
 
-        if (messageText) {
-          console.log(`💬 User: ${messageText}`);
-
-          try {
-            // 🔮 Send to OpenAI
-            const completion = await openai.chat.completions.create({
-              model: "gpt-4o",
-              messages: [
-                { role: "system", content: "You are a poetic and mythic AI guide named Virelya. You speak with beauty, clarity, and a soft magical presence." },
-                { role: "user", content: messageText }
-              ]
-            });
-
-            const reply = completion.choices[0].message.content;
-            console.log(`✨ Virelya: ${reply}`);
-
-            // 💌 Send reply to Messenger
-            await fetch(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                recipient: { id: senderId },
-                message: { text: reply }
-              })
-            });
-          } catch (err) {
-            console.error('❌ Error with OpenAI or Messenger API:', err);
-          }
+        if (message) {
+          console.log("📩 Received message:", message);
+          await sendTextMessage(senderId, `You said: ${message}`);
         }
       }
     }
-
     res.sendStatus(200);
   } else {
     res.sendStatus(404);
   }
 });
 
-app.listen(3000, () => {
-  console.log('🌸 Virelya webhook server is listening on port 3000');
+// 📤 Send reply back via Facebook Send API
+async function sendTextMessage(recipientId, text) {
+  try {
+    await axios.post(
+      `https://graph.facebook.com/v12.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+      {
+        recipient: { id: recipientId },
+        message: { text },
+      }
+    );
+    console.log("✅ Message sent");
+  } catch (err) {
+    console.error("❌ Failed to send message:", err.response?.data || err.message);
+  }
+}
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server listening on port ${PORT}`);
 });
